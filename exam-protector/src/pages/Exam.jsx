@@ -184,14 +184,37 @@ export default function Exam() {
     } catch (_) {}
   }
 
-  function handleViolation(type, reason) {
-    if (popupOpenRef.current || terminated) return;
-    popupOpenRef.current = true;
-    setPopupType("warning");
-    setWarnings((prev) => ({ ...prev, [type]: prev[type] + 1 }));
-    setPopupMsg(`⚠️ Warning: ${reason}`);
-    console.log(`⚠️ Violation: ${type} - ${reason}`);
-  }
+   function handleViolation(type, reason) {
+  if (popupOpenRef.current || terminated) return;
+
+  setWarnings((prev) => {
+    const newWarnings = { ...prev, [type]: prev[type] + 1 };
+
+
+    if (newWarnings[type] > 2) {
+      // Terminate exam
+      setTerminated(true);
+      popupOpenRef.current = true;
+      setPopupType("warning");
+      setPopupMsg(
+        `❌ Exam terminated! Too many ${type} violations.\nReason: ${reason}`
+      );
+      lastActionRef.current = "terminated";
+      console.log(`❌ Exam terminated due to ${type} violations`);
+      stopStreams();
+    } else {
+      // Show normal warning popup
+      popupOpenRef.current = true;
+      setPopupType("warning");
+      setPopupMsg(`⚠️ Warning (${newWarnings[type]}): ${reason}`);
+      console.log(
+        `⚠️ Warning #${newWarnings[type]} for ${type} - ${reason}`
+      );
+    }
+
+    return newWarnings;
+  });
+}
 
   let lastObjectDetect = 0;
   async function detectLoop() {
@@ -463,11 +486,20 @@ export default function Exam() {
         </div>
       </div>
 
-      <SuccessPopup
-        message={popupMsg}
-        onClose={handlePopupClose}
-        type={popupType}
-      />
+      {/* ✅ Conditional rendering for popups */}
+      {popupType === "success" ? (
+        <SuccessPopup
+          message={popupMsg}
+          onClose={handlePopupClose}
+          type={popupType}
+        />
+      ) : (
+        <WarningPopup
+          message={popupMsg}
+          onClose={handlePopupClose}
+          type={popupType}
+        />
+      )}
     </div>
   );
 }
