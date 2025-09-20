@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable no-empty */
 /* eslint-disable no-unused-vars */
 import React, { useEffect, useRef, useState } from "react";
@@ -44,13 +45,13 @@ export default function Exam() {
   const lastActionRef = useRef(null);
 
   // tuning
-  const FACE_TOLERANCE = 0.08;
+  const FACE_TOLERANCE = 0.1;
   const SIZE_TOLERANCE = 0.1;
   const FACE_OUT_FRAMES = 10;
   const SMOOTHING_FACTOR = 0.2;
   const MIC_VOLUME_THRESHOLD = 0.015;
   const MIC_NOISE_FRAMES = 30;
-  const CALIBRATION_TIME = 4000;
+  const CALIBRATION_TIME = 3000;
 
   // calibration refs
   const smoothedCenterRef = useRef({ x: 0, y: 0 });
@@ -184,37 +185,34 @@ export default function Exam() {
     } catch (_) {}
   }
 
-   function handleViolation(type, reason) {
-  if (popupOpenRef.current || terminated) return;
+  function handleViolation(type, reason) {
+    if (popupOpenRef.current || terminated) return;
 
-  setWarnings((prev) => {
-    const newWarnings = { ...prev, [type]: prev[type] + 1 };
+    setWarnings((prev) => {
+      const newWarnings = { ...prev, [type]: prev[type] + 1 };
 
+      if (newWarnings[type] > 2) {
+        // Terminate exam
+        setTerminated(true);
+        popupOpenRef.current = true;
+        setPopupType("warning");
+        setPopupMsg(
+          `❌ Exam terminated! Too many ${type} violations.\nReason: ${reason}`
+        );
+        lastActionRef.current = "terminated";
+        console.log(`❌ Exam terminated due to ${type} violations`);
+        stopStreams();
+      } else {
+        // Show normal warning popup
+        popupOpenRef.current = true;
+        setPopupType("warning");
+        setPopupMsg(`⚠️ Warning (${newWarnings[type]}): ${reason}`);
+        console.log(`⚠️ Warning #${newWarnings[type]} for ${type} - ${reason}`);
+      }
 
-    if (newWarnings[type] > 2) {
-      // Terminate exam
-      setTerminated(true);
-      popupOpenRef.current = true;
-      setPopupType("warning");
-      setPopupMsg(
-        `❌ Exam terminated! Too many ${type} violations.\nReason: ${reason}`
-      );
-      lastActionRef.current = "terminated";
-      console.log(`❌ Exam terminated due to ${type} violations`);
-      stopStreams();
-    } else {
-      // Show normal warning popup
-      popupOpenRef.current = true;
-      setPopupType("warning");
-      setPopupMsg(`⚠️ Warning (${newWarnings[type]}): ${reason}`);
-      console.log(
-        `⚠️ Warning #${newWarnings[type]} for ${type} - ${reason}`
-      );
-    }
-
-    return newWarnings;
-  });
-}
+      return newWarnings;
+    });
+  }
 
   let lastObjectDetect = 0;
   async function detectLoop() {
@@ -236,8 +234,13 @@ export default function Exam() {
       if (faces.length !== 1) {
         if (faces.length > 1)
           handleViolation("face", "Multiple faces detected");
-        if (faces.length === 0)
-          handleViolation("face", "User moved out of frame");
+        if (faces.length === 0) {
+          faceOutCounter.current++;
+          if (faceOutCounter.current >= FACE_OUT_FRAMES) {
+            handleViolation("face", "User moved out of frame too long");
+            faceOutCounter.current = 0;
+          }
+        }
       } else {
         const face = faces[0];
         const box = face.box;
@@ -310,16 +313,28 @@ export default function Exam() {
       }
 
       if (objects.length > 0) {
-        const phoneDetected = objects.some(
-          (o) => o.class === "cell phone" && o.score > 0.6
+        const ignoredClasses = ["person"]; // You can include "face" if supported
+        const threshold = 0.6;
+
+        const unwantedObjects = objects.filter(
+          (o) => !ignoredClasses.includes(o.class) && o.score > threshold
         );
+
         const personCount = objects.filter(
-          (o) => o.class === "person" && o.score > 0.6
+          (o) => o.class === "person" && o.score > threshold
         ).length;
 
-        if (phoneDetected) handleViolation("object", "Phone detected");
-        if (personCount > 1)
+        if (unwantedObjects.length > 0) {
+          const objectNames = unwantedObjects.map((o) => o.class).join(", ");
+          handleViolation(
+            "object",
+            `Unexpected object(s) detected: ${objectNames}`
+          );
+        }
+
+        if (personCount > 1) {
           handleViolation("object", "Multiple persons detected");
+        }
       }
     } catch (err) {
       console.warn("Detection error:", err);
@@ -426,7 +441,6 @@ export default function Exam() {
       <div>
         <h4>answer the following MCQ questions</h4>
       </div>
-
       <div className="exam-body">
         <div className="question-area">
           <h3 className="question-text">
@@ -485,7 +499,6 @@ export default function Exam() {
           </div>
         </div>
       </div>
-
       {/* ✅ Conditional rendering for popups */}
       {popupType === "success" ? (
         <SuccessPopup
